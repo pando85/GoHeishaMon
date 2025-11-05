@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/pando85/GoHeishaMon/src/logger"
 	tarm "github.com/tarm/serial"
 )
 
@@ -31,7 +32,6 @@ type Comms struct {
 	buffer       bytes.Buffer
 	serialPort   *tarm.Port
 	serialConfig *tarm.Config
-	LogHex       bool // Enable hex logging
 }
 
 // Statistics contains read statistics
@@ -55,16 +55,14 @@ func (s *Comms) Open(portName string, timeout time.Duration) error {
 
 func (s *Comms) openInternal() error {
 	var err error
+	logger.Info("Opening serial port")
 	s.serialPort, err = tarm.OpenPort(s.serialConfig)
 	if err != nil {
 		return fmt.Errorf("failed to open serial port: %w", err)
 	}
-	fmt.Println("Serial port open")
 
-	// Flush the buffer
+	logger.Debug("Flushing serial port buffer")
 	s.serialPort.Flush()
-
-	fmt.Println("Serial port flushed")
 
 	return nil
 }
@@ -119,9 +117,7 @@ func (s *Comms) SendCommand(command []byte) error {
 		return fmt.Errorf("failed to write checksum: %w", err)
 	}
 
-	if s.LogHex {
-		fmt.Printf("Send: % X\n", command)
-	}
+	logger.DebugHex("Send", command)
 
 	return nil
 }
@@ -130,11 +126,11 @@ func (s *Comms) readToBuffer() {
 	data := make([]byte, dataBufferSize)
 	n, err := s.serialPort.Read(data)
 	if err != nil && err != io.EOF {
-		fmt.Printf("Serial read error: %v\n", err)
+		logger.Error("Serial read error: %v", err)
 		s.Close()
 		// Attempt to reconnect
 		if reopenErr := s.openInternal(); reopenErr != nil {
-			fmt.Printf("Failed to reconnect: %v\n", reopenErr)
+			logger.Error("Failed to reconnect: %v", reopenErr)
 		}
 	}
 	if n > 0 {
@@ -148,14 +144,12 @@ func (s *Comms) findHeaderStart() bool {
 	}
 	hdr := bytes.IndexByte(s.buffer.Bytes(), 0x71)
 	if hdr < 0 {
-		fmt.Printf("No header found, clearing buffer of size %d\n", s.buffer.Len())
+		logger.Debug("No header found, clearing buffer of size %d", s.buffer.Len())
 		return false
 	} else if hdr > 0 {
 		// Found header but not at start, discard bytes before it
 		waste := s.buffer.Next(hdr)
-		if s.LogHex {
-			fmt.Printf("Discarding %d bytes before header: % X\n", len(waste), waste)
-		}
+		logger.DebugHex(fmt.Sprintf("Discarding %d bytes before header", len(waste)), waste)
 	}
 	return true
 }
@@ -164,20 +158,18 @@ func (s *Comms) dispatchDatagram(length int) []byte {
 	s.goodreads++
 	readpercentage := float64(s.totalreads-s.goodreads) / float64(s.totalreads) * 100.
 	if s.totalreads%loggingRatio == 0 {
-		fmt.Printf("RX: %d RX errors: %d (%.2f %%)\n", s.totalreads, s.totalreads-s.goodreads, readpercentage)
+		logger.Info("RX: %d RX errors: %d (%.2f %%)", s.totalreads, s.totalreads-s.goodreads, readpercentage)
 	}
 
 	packet := s.buffer.Next(length)
 
-	if s.LogHex {
-		fmt.Printf("Received: % X\n", packet)
-	}
+	logger.DebugHex("Received", packet)
 
 	if length == DataMessageLength || length == OptionalMessageLength {
 		return packet
 	}
 
-	fmt.Printf("Received an unknown datagram. Can't decode this (yet?). Length: %d\n", length)
+	logger.Info("Received an unknown datagram. Can't decode this (yet?). Length: %d", length)
 	return nil
 }
 
@@ -191,9 +183,7 @@ func (s *Comms) checkHeader() (length int, ok bool) {
 		ok = true
 		return
 	}
-	if s.LogHex {
-		fmt.Printf("Invalid header bytes: % X\n", data[:4])
-	}
+	logger.DebugHex("Invalid header bytes", data[:4])
 	return
 }
 
@@ -212,7 +202,7 @@ func (s *Comms) Read() []byte {
 			// consume byte, it's not a valid header
 			_, err := s.buffer.ReadByte()
 			if err != nil {
-				fmt.Printf("Buffer read error: %v\n", err)
+				logger.Error("Buffer read error: %v", err)
 			}
 			return nil
 		}
@@ -226,12 +216,12 @@ func (s *Comms) Read() []byte {
 			// invalid checksum, need to consume 0x71 and look for another one
 			_, err := s.buffer.ReadByte()
 			if err != nil {
-				fmt.Printf("Buffer read error: %v\n", err)
+				logger.Error("Buffer read error: %v", err)
 			}
 
-			fmt.Println("Invalid checksum on receive!")
+			logger.Error("Invalid checksum on receive!")
 		} else {
-			fmt.Printf("Waiting for more data. Have %d, need %d\n", s.buffer.Len(), length)
+			logger.Debug("Waiting for more data. Have %d, need %d", s.buffer.Len(), length)
 		}
 	}
 	return nil
