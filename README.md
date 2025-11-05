@@ -137,6 +137,7 @@ After first installation you can use the following command to install newer vers
 through SSH:
 
 ```bash
+make build-mips upx
 TARGET_HOST=xxx.xxx.xxx.xxx make install
 ```
 
