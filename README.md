@@ -103,35 +103,45 @@ To install the software, follow these steps:
    drive before the white LED turns on again, as leaving the drive with the config file present will
    result in it being copied again and triggering another reboot.
 
-7. After the update, you can access the CZ-TAW1 via SSH using the following password `goheishamon`. We recommend to change the password in the first login.
+7. After the update, you can access the CZ-TAW1 via SSH using the following password `goheishamon`.
+   We recommend to change the password in the first login.
 
 ## Board Functionality
 
 ### Buttons
 
-- **WPS Button**: Pressing the WPS button, middle LED will flash blue and will mount the USB and if `settings.txt` file is present, it will change the WiFi settings. Use same format as in the original firmware.
+- **WPS Button**: Pressing the WPS button, middle LED will flash blue and will mount the USB and if
+  `settings.txt` file is present, it will change the WiFi settings. Use same format as in the
+  original firmware.
 - **Reset Button**: Pressing the reset button will restart the GoHeishaMon application.
 - **Check Button**: The check button does not trigger any specific action.
-- **Simultaneous WPS and Reset Button Press**: When both the WPS and Reset buttons are pressed together, middle LED will flash green, and the root password will be reset to `goheishamon`.
-- **Simultaneous all Button Press**: When all buttons are pressed together, the board will switch back to its original firmware.
+- **Simultaneous WPS and Reset Button Press**: When both the WPS and Reset buttons are pressed
+  together, middle LED will flash green, and the root password will be reset to `goheishamon`.
+- **Simultaneous all Button Press**: When all buttons are pressed together, the board will switch
+  back to its original firmware.
 
 ### LEDs
 
-- **Top LED**: This LED, illuminated in green, indicates whether the operating system (OS) is currently running.
+- **Top LED**: This LED, illuminated in green, indicates whether the operating system (OS) is
+  currently running.
 
-- **Mid LED**: The white light emitted from this LED signifies that the GoHeishaMon application is in running.
+- **Mid LED**: The white light emitted from this LED signifies that the GoHeishaMon application is
+  in running.
 
-- **Bottom LED**: When this LED is lit in green, it indicates the data pin's status, which is either low or high, for communication with the main board.
+- **Bottom LED**: When this LED is lit in green, it indicates the data pin's status, which is either
+  low or high, for communication with the main board.
 
 ## Remote install
 
-After first installation you can use the following command to install newer versions of GoHeishaMon through SSH:
+After first installation you can use the following command to install newer versions of GoHeishaMon
+through SSH:
 
 ```bash
 TARGET_HOST=xxx.xxx.xxx.xxx make install
 ```
 
-**Warning**: This command will remove the original firmware. You can restore it following the steps on this guide.
+**Warning**: This command will remove the original firmware. You can restore it following the steps
+on this guide.
 
 ### Restore original firmware
 
@@ -153,16 +163,18 @@ reboot
 
 ## Alternative hardware
 
-If you want to use GoHeishaMon without the CZ-TAW1 module, you can use a Raspberry Pi or any other device.
+If you want to use GoHeishaMon without the CZ-TAW1 module, you can use a Raspberry Pi or any other
+device.
 
 ### Serial connection
 
-There are two ways to connect to the heat pump: using the CN-CNT socket or the CN-NMODE socket. The following images show both of them:
-![Serial Sockets](assets/serial_sockets.png)
+There are two ways to connect to the heat pump: using the CN-CNT socket or the CN-NMODE socket. The
+following images show both of them: ![Serial Sockets](assets/serial_sockets.png)
 
 #### CN-CNT Socket
 
-The original serial connection cable connects to the CN-CNT socket with the following pinout (ordered from top to bottom):
+The original serial connection cable connects to the CN-CNT socket with the following pinout
+(ordered from top to bottom):
 
 | Pin | Function | Description                                   |
 | --- | -------- | --------------------------------------------- |
@@ -182,3 +194,31 @@ Alternatively, you can use the CN-NMODE socket with this pinout (ordered from le
 | 3   | TX       | Data transmission FROM heat pump (0-5V level) |
 | 2   | RX       | Data transmission TO heat pump (0-5V level)   |
 | 1   | GND      | Ground connection                             |
+
+## Troubleshooting
+
+### Read logs
+
+Historical logs can be read using the following command:
+
+```bash
+logread | grep goheishamon
+```
+
+Current logs can be monitored in real-time with:
+
+```bash
+logread -f | grep goheishamon
+```
+
+### Restart GoHeishaMon
+
+```bash
+/etc/init.d/goheishamon restart
+```
+
+Sometimes is better to reboot the whole device:
+
+```bash
+reboot
+```
