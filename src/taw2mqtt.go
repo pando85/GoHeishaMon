@@ -767,8 +767,6 @@ func HandleSetHeatpump(mclient mqtt.Client, msg mqtt.Message) {
 	CommandsToSend[xid.New()] = command
 }
 
-// logHex replaced by logger.DebugHex
-
 func send_command(command []byte, length int) bool {
 	err := serialComms.SendCommand(command[:length])
 	if err != nil {

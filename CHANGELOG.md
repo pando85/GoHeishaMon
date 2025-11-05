@@ -1,10 +1,18 @@
 # Changelog
 
+## 1.2.0
+
+- Refactor logging system to use different log levels
+- Rewrite serial connection handling to improve stability
+- Fix Operating_Mode_State and SetOperationMode
+- Set powerful and quiet modes independently
+
 ## 1.1.1
 
 - Add init script to start GoHeishaMon on boot
 - Fix stack overflow in read serial goroutines
-- Add buttons functionality to recover connection and original firmware restore process documentation
+- Add buttons functionality to recover connection and original firmware restore process
+  documentation
 - Add status topic to MQTT
 
 ## 1.1.0
