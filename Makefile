@@ -26,7 +26,7 @@ all: test build-linux build-mips build-rpi
 
 build:  ## build binary
 build:
-	$(GOBUILD) -o $(BINARY_NAME) -v
+	$(GOBUILD) -o $(BINARY_NAME) -v ./src
 
 test:   ## run go tests
 test:
@@ -45,22 +45,22 @@ run:
 deps:   ## create dist
 deps:
 	$(GOGET) github.com/eclipse/paho.mqtt.golang
-	$(GOGET) go.bug.st/serial
+	$(GOGET) github.com/tarm/serial
 	$(GOGET) github.com/BurntSushi/toml
 	$(GOGET) github.com/rs/xid
 	mkdir dist
 
 build-linux:    ## build for linux
 build-linux:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/$(BINARY_UNIX)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/$(BINARY_UNIX) ./src
 
 build-mips: ## build for MIPS
 build-mips:
-	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat $(GOBUILD) -ldflags "-s -w" -a -o dist/$(BINARY_MIPS)
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat $(GOBUILD) -ldflags "-s -w" -a -o dist/$(BINARY_MIPS) ./src
 
 build-rpi:  ## build for ARM
 build-rpi:
-	GOOS=linux GOARCH=arm GOARM=5 $(GOBUILD) -o dist/$(BINARY_ARM)
+	GOOS=linux GOARCH=arm GOARM=5 $(GOBUILD) -o dist/$(BINARY_ARM) ./src
 
 upx:    ## package binary
 upx:
