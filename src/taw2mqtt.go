@@ -36,16 +36,10 @@ var MqttKeepalive time.Duration
 var CommandsToSend map[xid.ID][]byte
 var actData [NUMBER_OF_TOPICS]string
 var config Config
-var sending bool
 var serialComms *serial.Comms
 var err error
 var SwitchTopics map[string]AutoDiscoverStruct
 var ClimateTopics map[string]AutoDiscoverStruct
-
-type command_struct struct {
-	value  [128]byte
-	length int
-}
 
 type TopicData struct {
 	TopicNumber        int
@@ -60,33 +54,31 @@ type TopicData struct {
 }
 
 type Config struct {
-    Readonly               bool
-    LogLevel               string
-    Device                 string
-    ReadInterval           int
-    MqttServer             string
-    MqttPort               string
-    MqttLogin              string
-    Aquarea2mqttCompatible bool
-    Mqtt_topic_base        string
-    Mqtt_set_base          string
-    Aquarea2mqttPumpID     string
-    MqttPass               string
-    MqttClientID           string
-    MqttKeepalive          int
-    MqttUseTLS             bool
-    MqttTLSInsecure        bool
-    MqttCaCertFile         string
-    MqttClientCertFile     string
-    MqttClientKeyFile      string
-    ForceRefreshTime       int
-    EnableCommand          bool
-    SleepAfterCommand      int
-    HAAutoDiscover         bool
+	Readonly               bool
+	LogLevel               string
+	Device                 string
+	ReadInterval           int
+	MqttServer             string
+	MqttPort               string
+	MqttLogin              string
+	Aquarea2mqttCompatible bool
+	Mqtt_topic_base        string
+	Mqtt_set_base          string
+	Aquarea2mqttPumpID     string
+	MqttPass               string
+	MqttClientID           string
+	MqttKeepalive          int
+	MqttUseTLS             bool
+	MqttTLSInsecure        bool
+	MqttCaCertFile         string
+	MqttClientCertFile     string
+	MqttClientKeyFile      string
+	ForceRefreshTime       int
+	EnableCommand          bool
+	SleepAfterCommand      int
+	HAAutoDiscover         bool
 }
 
-var cfgfile *string
-var topicfile *string
 var configfile string
 
 func ReadConfig() Config {
@@ -112,7 +104,7 @@ func UpdateConfig(configFilePath string) bool {
 	_, err = os.Stat("/mnt/usb/GoHeishaMonConfig.new")
 	if err != nil {
 		_, _ = exec.Command("/usr/bin/usb_umount.sh").Output()
-	logger.Error("update-config: no new configfile found: %s, unmounting USB", err.Error())
+		logger.Error("update-config: no new configfile found: %s, unmounting USB", err.Error())
 		return false
 	}
 	if GetFileChecksum(configFilePath) != GetFileChecksum("/mnt/usb/GoHeishaMonConfig.new") {
@@ -252,78 +244,78 @@ type AutoDiscoverStruct struct {
 }
 
 func main() {
-    SwitchTopics = make(map[string]AutoDiscoverStruct)
+	SwitchTopics = make(map[string]AutoDiscoverStruct)
 
-    flag.Parse()
-    if runtime.GOOS != "windows" {
-        configfile = "/etc/config/goheishamon.toml"
-    } else {
-        configfile = "config"
-    }
+	flag.Parse()
+	if runtime.GOOS != "windows" {
+		configfile = "/etc/config/goheishamon.toml"
+	} else {
+		configfile = "config"
+	}
 
-    _, err := os.Stat(configfile)
-    if err != nil {
-	logger.Error("Config file is missing: %s", configfile)
-        UpdateConfig(configfile)
-    }
+	_, err := os.Stat(configfile)
+	if err != nil {
+		logger.Error("Config file is missing: %s", configfile)
+		UpdateConfig(configfile)
+	}
 
-    go UpdateConfigLoop(configfile)
-    go ClearActData()
+	go UpdateConfigLoop(configfile)
+	go ClearActData()
 
-    CommandsToSend = make(map[xid.ID][]byte)
-    var in int
-    config = ReadConfig()
+	CommandsToSend = make(map[xid.ID][]byte)
+	var in int
+	config = ReadConfig()
 
-    // Initialize logger with configured level
-    logger.SetLevelString(config.LogLevel)
+	// Initialize logger with configured level
+	logger.SetLevelString(config.LogLevel)
 
-    // Initialize the heat pump serial communication
-    serialComms = &serial.Comms{}
-    err = serialComms.Open(config.Device, time.Millisecond*100)
-    if err != nil {
-        logger.Error("failed to open serial port: %v", err)
-    }
-    defer serialComms.Close()
+	// Initialize the heat pump serial communication
+	serialComms = &serial.Comms{}
+	err = serialComms.Open(config.Device, time.Millisecond*100)
+	if err != nil {
+		logger.Error("failed to open serial port: %v", err)
+	}
+	defer serialComms.Close()
 
-    PoolInterval := time.Second * time.Duration(config.ReadInterval)
-    ParseTopicList3()
-    MqttKeepalive = time.Second * time.Duration(config.MqttKeepalive)
-    MC, MT := MakeMQTTConn()
+	PoolInterval := time.Second * time.Duration(config.ReadInterval)
+	ParseTopicList3()
+	MqttKeepalive = time.Second * time.Duration(config.MqttKeepalive)
+	MC, MT := MakeMQTTConn()
 
-    if config.HAAutoDiscover {
-        PublishTopicsToAutoDiscover(MC, MT)
-    }
+	if config.HAAutoDiscover {
+		PublishTopicsToAutoDiscover(MC, MT)
+	}
 
-    go readSerial(MC, MT)
+	go readSerial(MC, MT)
 
-    for {
-        if len(CommandsToSend) > 0 {
+	for {
+		if len(CommandsToSend) > 0 {
 			logger.Info("there is more than one command ie %d", len(CommandsToSend))
-            in = 1
-            for key, value := range CommandsToSend {
-                if in == 1 {
-                    send_command(value, len(value))
-                    delete(CommandsToSend, key)
-                    in++
-                    time.Sleep(time.Second * time.Duration(config.SleepAfterCommand))
-                } else {
+			in = 1
+			for key, value := range CommandsToSend {
+				if in == 1 {
+					send_command(value, len(value))
+					delete(CommandsToSend, key)
+					in++
+					time.Sleep(time.Second * time.Duration(config.SleepAfterCommand))
+				} else {
 					logger.Info("command number %d is too big I will do it in the next cycle", in)
-                    break
-                }
+					break
+				}
 				logger.Info("conclude range after command table")
-            }
-        } else {
-            send_command(panasonicQuery, PANASONICQUERYSIZE)
-        }
+			}
+		} else {
+			send_command(panasonicQuery, PANASONICQUERYSIZE)
+		}
 
-        time.Sleep(PoolInterval)
-    }
+		time.Sleep(PoolInterval)
+	}
 }
 
 func ClearActData() {
 	for {
 		time.Sleep(time.Second * time.Duration(config.ForceRefreshTime))
-		for k, _ := range actData {
+		for k := range actData {
 			actData[k] = "nil" //funny i know ;)
 		}
 
@@ -331,68 +323,62 @@ func ClearActData() {
 }
 
 func MakeMQTTConn() (mqtt.Client, mqtt.Token) {
-    opts := mqtt.NewClientOptions()
+	opts := mqtt.NewClientOptions()
 
-    protocol := "tcp"
-    if config.MqttUseTLS {
-        protocol = "ssl"
-    }
+	protocol := "tcp"
+	if config.MqttUseTLS {
+		protocol = "ssl"
+	}
 
-    opts.AddBroker(fmt.Sprintf("%s://%s:%s", protocol, config.MqttServer, config.MqttPort))
-    opts.SetPassword(config.MqttPass)
-    opts.SetUsername(config.MqttLogin)
-    opts.SetClientID(config.MqttClientID)
-    opts.SetWill(fmt.Sprintf("%s/Status", config.Mqtt_topic_base), "offline", 1, true)
-    opts.SetKeepAlive(MqttKeepalive)
-    opts.SetOnConnectHandler(startsub)
+	opts.AddBroker(fmt.Sprintf("%s://%s:%s", protocol, config.MqttServer, config.MqttPort))
+	opts.SetPassword(config.MqttPass)
+	opts.SetUsername(config.MqttLogin)
+	opts.SetClientID(config.MqttClientID)
+	opts.SetWill(fmt.Sprintf("%s/Status", config.Mqtt_topic_base), "offline", 1, true)
+	opts.SetKeepAlive(MqttKeepalive)
+	opts.SetOnConnectHandler(startsub)
 	opts.SetConnectRetry(true)
 	opts.SetAutoReconnect(true)
 
-    if config.MqttUseTLS {
-        tlsConfig := &tls.Config{}
+	if config.MqttUseTLS {
+		tlsConfig := &tls.Config{}
 
-        if config.MqttCaCertFile != "" {
-            caCert, err := ioutil.ReadFile(config.MqttCaCertFile)
-            if err == nil {
-                caCertPool := x509.NewCertPool()
-                caCertPool.AppendCertsFromPEM(caCert)
-                tlsConfig.RootCAs = caCertPool
-            } else {
+		if config.MqttCaCertFile != "" {
+			caCert, err := ioutil.ReadFile(config.MqttCaCertFile)
+			if err == nil {
+				caCertPool := x509.NewCertPool()
+				caCertPool.AppendCertsFromPEM(caCert)
+				tlsConfig.RootCAs = caCertPool
+			} else {
 				logger.Info("Error loading CA certificate: %v", err)
-            }
-        }
+			}
+		}
 
-        if config.MqttClientCertFile != "" && config.MqttClientKeyFile != "" {
-            cert, err := tls.LoadX509KeyPair(config.MqttClientCertFile, config.MqttClientKeyFile)
-            if err == nil {
-                tlsConfig.Certificates = []tls.Certificate{cert}
-            } else {
+		if config.MqttClientCertFile != "" && config.MqttClientKeyFile != "" {
+			cert, err := tls.LoadX509KeyPair(config.MqttClientCertFile, config.MqttClientKeyFile)
+			if err == nil {
+				tlsConfig.Certificates = []tls.Certificate{cert}
+			} else {
 				logger.Info("Error loading client certificate/key: %v", err)
-            }
-        }
+			}
+		}
 
-        if config.MqttTLSInsecure {
-            tlsConfig.InsecureSkipVerify = true
-        }
+		if config.MqttTLSInsecure {
+			tlsConfig.InsecureSkipVerify = true
+		}
 
-        opts.SetTLSConfig(tlsConfig)
-    }
+		opts.SetTLSConfig(tlsConfig)
+	}
 
-    // connect to broker
-    client := mqtt.NewClient(opts)
-    //defer client.Disconnect(uint(2))
+	// connect to broker
+	client := mqtt.NewClient(opts)
+	//defer client.Disconnect(uint(2))
 
-    token := client.Connect()
+	token := client.Connect()
 	if token.Wait() && token.Error() != nil {
 		logger.Info("Fail to connect broker, %v", token.Error())
 	}
-    return client, token
-}
-
-func connLostHandler(c mqtt.Client, err error) {
-	logger.Info("Connection lost, reason: %v", err)
-
-	//Perform additional action...
+	return client, token
 }
 
 func MakeSwitchTopic(name string, state string) {
@@ -469,10 +455,6 @@ func HandleMSGfromMQTT(mclient mqtt.Client, msg mqtt.Message) {
 
 }
 
-func remove(slice []string, s int) []string {
-	return append(slice[:s], slice[s+1:]...)
-}
-
 func HandleOSCommand(mclient mqtt.Client, msg mqtt.Message) {
 	var cmd *exec.Cmd
 	var out2 string
@@ -493,7 +475,7 @@ func HandleOSCommand(mclient mqtt.Client, msg mqtt.Message) {
 	logger.Info("Published to %s warosc %s", TOP, string(comout))
 	token := mclient.Publish(TOP, byte(0), false, comout)
 	if token.Wait() && token.Error() != nil {
-	logger.Error("Fail to publish, %v", token.Error())
+		logger.Error("Fail to publish, %v", token.Error())
 	}
 
 }
@@ -811,7 +793,7 @@ func readSerial(MC mqtt.Client, MT mqtt.Token) {
 				}
 
 				// Decode and publish the data
-				decode_heatpump_data(packet, MC, MT)
+				decode_heatpump_data(packet, MC)
 
 				// Publish online status
 				token := MC.Publish(
@@ -830,7 +812,6 @@ func readSerial(MC mqtt.Client, MT mqtt.Token) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
-
 
 func CallTopicFunction(data byte, f func(data byte) string) string {
 	return f(data)
@@ -951,13 +932,13 @@ func getErrorInfo(data []byte) string { // TOP44 //
 		Error_string = fmt.Sprintf("H%02X", Error_number)
 
 	default:
-		Error_string = fmt.Sprintf("No error")
+		Error_string = "No error"
 
 	}
 	return Error_string
 }
 
-func decode_heatpump_data(data []byte, mclient mqtt.Client, token mqtt.Token) {
+func decode_heatpump_data(data []byte, mclient mqtt.Client) {
 
 	var updatenow bool = false
 	m := map[string]func(byte) string{
@@ -972,7 +953,7 @@ func decode_heatpump_data(data []byte, mclient mqtt.Client, token mqtt.Token) {
 		"getBit1and2":         getBit1and2,
 		"getOpMode":           getOpMode,
 		"getIntMinus1":        getIntMinus1,
-		"getPower":           getPower,
+		"getPower":            getPower,
 		"getBit5and6":         getBit5and6,
 
 		"getBit3and4": getBit3and4,
@@ -985,7 +966,6 @@ func decode_heatpump_data(data []byte, mclient mqtt.Client, token mqtt.Token) {
 	for k, v := range AllTopics {
 		var Input_Byte byte
 		var Topic_Value string
-		var value string
 		switch k {
 		case 1:
 			Topic_Value = getPumpFlow(data)
@@ -1026,17 +1006,16 @@ func decode_heatpump_data(data []byte, mclient mqtt.Client, token mqtt.Token) {
 			logger.Info("received TOP%d %s: %s", k, v.TopicName, Topic_Value)
 			if config.Aquarea2mqttCompatible {
 				TOP := "aquarea/state/" + fmt.Sprintf("%s/%s", config.Aquarea2mqttPumpID, v.TopicA2M)
-				value = strings.TrimSpace(Topic_Value)
-				value = strings.ToUpper(Topic_Value)
+				value := strings.ToUpper(strings.TrimSpace(Topic_Value))
 				logger.Info("It publishes to %s warosc %s", TOP, string(value))
-				token = mclient.Publish(TOP, byte(0), false, value)
+				token := mclient.Publish(TOP, byte(0), false, value)
 				if token.Wait() && token.Error() != nil {
 					logger.Error("Fail to publish, %v", token.Error())
 				}
 			}
 			TOP := fmt.Sprintf("%s/%s", config.Mqtt_topic_base, v.TopicName)
 			logger.Info("It publishes to %s warosc %s", TOP, string(Topic_Value))
-			token = mclient.Publish(TOP, byte(0), false, Topic_Value)
+			token := mclient.Publish(TOP, byte(0), false, Topic_Value)
 			if token.Wait() && token.Error() != nil {
 				logger.Error("Fail to publish, %v", token.Error())
 			}

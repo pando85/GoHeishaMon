@@ -10,7 +10,7 @@ func TestNew(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := New(LevelInfo, buf)
 	if l == nil {
-		t.Error("New() returned nil")
+		t.Fatal("New() returned nil")
 	}
 	if l.level != LevelInfo {
 		t.Errorf("expected level %d, got %d", LevelInfo, l.level)

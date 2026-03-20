@@ -74,7 +74,3 @@ func newMockComms(data []byte) *mockComms {
 	mc.buffer.Reset()
 	return mc
 }
-
-func (mc *mockComms) addReadData(data []byte) {
-	mc.mockPort.readData = append(mc.mockPort.readData, data...)
-}
