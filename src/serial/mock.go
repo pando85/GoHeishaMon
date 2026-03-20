@@ -2,7 +2,6 @@ package serial
 
 import (
 	"io"
-	"time"
 )
 
 var _ SerialPort = (*MockPort)(nil)
@@ -59,11 +58,6 @@ func (m *MockPort) SetReadError(err error) {
 
 func (m *MockPort) SetWriteError(err error) {
 	m.writeErr = err
-}
-
-type portOpener interface {
-	Open(portName string, timeout time.Duration) error
-	Close() error
 }
 
 type mockComms struct {

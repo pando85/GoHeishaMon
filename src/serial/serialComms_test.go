@@ -181,6 +181,24 @@ func TestCheckHeader(t *testing.T) {
 			expectLength:  203,
 			expectOK:      false,
 		},
+		{
+			name:          "insufficient buffer - 3 bytes",
+			bufferContent: []byte{0x71, 0xc8, 0x01},
+			expectLength:  0,
+			expectOK:      false,
+		},
+		{
+			name:          "insufficient buffer - 1 byte",
+			bufferContent: []byte{0x71},
+			expectLength:  0,
+			expectOK:      false,
+		},
+		{
+			name:          "insufficient buffer - empty",
+			bufferContent: []byte{},
+			expectLength:  0,
+			expectOK:      false,
+		},
 	}
 
 	for _, tt := range tests {

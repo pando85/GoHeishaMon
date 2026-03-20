@@ -204,8 +204,9 @@ func (s *Comms) dispatchDatagram(length int) []byte {
 }
 
 func (s *Comms) checkHeader() (length int, ok bool) {
-	// opt header: 71 11 01 50; 20 bytes
-	// header:     71 c8 01 10; 203 bytes
+	if s.buffer.Len() < 4 {
+		return 0, false
+	}
 	data := s.buffer.Bytes()
 	length = int(data[1]) + 3
 	ok = false
