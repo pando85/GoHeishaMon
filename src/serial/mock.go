@@ -70,7 +70,7 @@ func newMockComms(data []byte) *mockComms {
 		Comms:    &Comms{},
 		mockPort: NewMockPort(data),
 	}
-	mc.Comms.serialPort = mc.mockPort
+	mc.serialPort = mc.mockPort
 	mc.buffer.Reset()
 	return mc
 }

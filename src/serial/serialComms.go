@@ -92,7 +92,9 @@ func (s *Comms) openInternal() error {
 	s.serialPort = &tarmPort{Port: port}
 
 	logger.Debug("Flushing serial port buffer")
-	s.serialPort.Flush()
+	if err := s.serialPort.Flush(); err != nil {
+		logger.Error("Failed to flush serial port: %v", err)
+	}
 
 	return nil
 }
@@ -157,7 +159,9 @@ func (s *Comms) readToBuffer() {
 	n, err := s.serialPort.Read(data)
 	if err != nil && err != io.EOF {
 		logger.Error("Serial read error: %v", err)
-		s.Close()
+		if err := s.Close(); err != nil {
+			logger.Error("Failed to close serial port: %v", err)
+		}
 		// Attempt to reconnect
 		if reopenErr := s.openInternal(); reopenErr != nil {
 			logger.Error("Failed to reconnect: %v", reopenErr)

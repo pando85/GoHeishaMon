@@ -169,7 +169,8 @@ func UpdateConfigLoop(configfile string) {
 	}
 }
 
-func PublishTopicsToAutoDiscover(mclient mqtt.Client, token mqtt.Token) {
+func PublishTopicsToAutoDiscover(mclient mqtt.Client) {
+	var token mqtt.Token
 	for k, v := range AllTopics {
 		var m AutoDiscoverStruct
 		m.UID = fmt.Sprintf("Aquarea-%s-%d", config.MqttLogin, k)
@@ -275,7 +276,11 @@ func main() {
 	if err != nil {
 		logger.Error("failed to open serial port: %v", err)
 	}
-	defer serialComms.Close()
+	defer func() {
+		if err := serialComms.Close(); err != nil {
+			logger.Error("Failed to close serial port: %v", err)
+		}
+	}()
 
 	PoolInterval := time.Second * time.Duration(config.ReadInterval)
 	ParseTopicList3()
@@ -283,7 +288,7 @@ func main() {
 	MC, MT := MakeMQTTConn()
 
 	if config.HAAutoDiscover {
-		PublishTopicsToAutoDiscover(MC, MT)
+		PublishTopicsToAutoDiscover(MC)
 	}
 
 	go readSerial(MC, MT)
@@ -940,7 +945,7 @@ func getErrorInfo(data []byte) string { // TOP44 //
 
 func decode_heatpump_data(data []byte, mclient mqtt.Client) {
 
-	var updatenow bool = false
+	updatenow := false
 	m := map[string]func(byte) string{
 		"getBit7and8":         getBit7and8,
 		"unknown":             unknown,
