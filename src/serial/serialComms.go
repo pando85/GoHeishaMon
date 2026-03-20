@@ -16,6 +16,35 @@ import (
 
 const dataBufferSize = 1024
 
+type SerialPort interface {
+	Read(p []byte) (n int, err error)
+	Write(p []byte) (n int, err error)
+	Close() error
+	Flush() error
+}
+
+type tarmPort struct {
+	*tarm.Port
+}
+
+func (t *tarmPort) Read(p []byte) (n int, err error) {
+	return t.Port.Read(p)
+}
+
+func (t *tarmPort) Write(p []byte) (n int, err error) {
+	return t.Port.Write(p)
+}
+
+func (t *tarmPort) Close() error {
+	return t.Port.Close()
+}
+
+func (t *tarmPort) Flush() error {
+	return t.Port.Flush()
+}
+
+var _ SerialPort = (*tarmPort)(nil)
+
 // OptionalMessageLength is a length of an Optional PCB datagram with checksum
 const OptionalMessageLength = 20
 
@@ -30,7 +59,7 @@ type Comms struct {
 	goodreads    int64
 	totalreads   int64
 	buffer       bytes.Buffer
-	serialPort   *tarm.Port
+	serialPort   SerialPort
 	serialConfig *tarm.Config
 }
 
@@ -56,10 +85,11 @@ func (s *Comms) Open(portName string, timeout time.Duration) error {
 func (s *Comms) openInternal() error {
 	var err error
 	logger.Info("Opening serial port")
-	s.serialPort, err = tarm.OpenPort(s.serialConfig)
+	port, err := tarm.OpenPort(s.serialConfig)
 	if err != nil {
 		return fmt.Errorf("failed to open serial port: %w", err)
 	}
+	s.serialPort = &tarmPort{Port: port}
 
 	logger.Debug("Flushing serial port buffer")
 	s.serialPort.Flush()
