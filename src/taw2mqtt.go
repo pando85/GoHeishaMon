@@ -33,9 +33,19 @@ const NUMBER_OF_TOPICS int = 95
 
 var AllTopics [NUMBER_OF_TOPICS]TopicData
 var MqttKeepalive time.Duration
-// commandQueue is filled by MQTT handlers and drained by the main send loop,
-// in arrival order: e.g. "quiet mode off" then "powerful on" must not swap.
-var commandQueue [][]byte
+// Commands are in arrival order, and are deliberately ephemeral: replaying a
+// heating command hours after the requester sent it would be unsafe.
+const (
+	maxQueuedCommands = 256
+	commandTTL = 2 * time.Minute
+)
+
+type queuedCommand struct {
+	data []byte
+	queuedAt time.Time
+}
+
+var commandQueue []queuedCommand
 var commandsMu sync.Mutex
 
 // actData is accessed by the serial reader and refresh goroutine.
@@ -306,12 +316,15 @@ func main() {
 	go readSerial(MC, MT)
 
 	for {
-		if command, pending := nextCommand(); command != nil {
-			logger.Info("sending queued command, %d more pending for next cycles", pending)
-			send_command(command, len(command))
-			time.Sleep(time.Second * time.Duration(config.SleepAfterCommand))
+		attempted, sendErr := sendNextQueuedCommand(func(command []byte) error {
+			return send_command(command, len(command))
+		})
+		if attempted {
+			if !errors.Is(sendErr, serial.ErrNotOpen) {
+				time.Sleep(time.Second * time.Duration(config.SleepAfterCommand))
+			}
 		} else {
-			send_command(panasonicQuery, PANASONICQUERYSIZE)
+			_ = send_command(panasonicQuery, PANASONICQUERYSIZE)
 		}
 
 		time.Sleep(PoolInterval)
@@ -333,22 +346,87 @@ func clearActData() {
 	}
 }
 
-func queueCommand(command []byte) {
-	commandsMu.Lock()
-	defer commandsMu.Unlock()
-	commandQueue = append(commandQueue, command)
+// expireQueuedCommandsLocked is called while commandsMu is held.
+func expireQueuedCommandsLocked(now time.Time) {
+	expired := 0
+	for len(commandQueue) > 0 && now.Sub(commandQueue[0].queuedAt) >= commandTTL {
+		commandQueue[0] = queuedCommand{}
+		commandQueue = commandQueue[1:]
+		expired++
+	}
+	if expired > 0 {
+		logger.Info("Discarded %d expired queued commands", expired)
+	}
 }
 
+func queueCommand(command []byte) {
+	if len(command) == 0 {
+		return
+	}
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+	now := time.Now()
+	expireQueuedCommandsLocked(now)
+	if len(commandQueue) >= maxQueuedCommands {
+		logger.Error("Command queue full (%d), dropping the newest command", maxQueuedCommands)
+		return
+	}
+	// Own the bytes: MQTT callbacks can safely return after enqueuing.
+	commandQueue = append(commandQueue, queuedCommand{
+		data: append([]byte(nil), command...),
+		queuedAt: now,
+	})
+}
+
+// nextCommand is also used by callers that unconditionally consume a command.
 func nextCommand() ([]byte, int) {
 	commandsMu.Lock()
 	defer commandsMu.Unlock()
+	expireQueuedCommandsLocked(time.Now())
 	if len(commandQueue) == 0 {
 		return nil, 0
 	}
-	command := commandQueue[0]
-	commandQueue[0] = nil
+	command := commandQueue[0].data
+	commandQueue[0] = queuedCommand{}
 	commandQueue = commandQueue[1:]
 	return command, len(commandQueue)
+}
+
+func peekCommand() ([]byte, int) {
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+	expireQueuedCommandsLocked(time.Now())
+	if len(commandQueue) == 0 {
+		return nil, 0
+	}
+	return commandQueue[0].data, len(commandQueue) - 1
+}
+
+func consumeCommand() {
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+	if len(commandQueue) > 0 {
+		commandQueue[0] = queuedCommand{}
+		commandQueue = commandQueue[1:]
+	}
+}
+
+// Only an unopened port guarantees that no bytes of the command were sent.
+// For other write errors delivery is ambiguous; do not blindly replay.
+func sendNextQueuedCommand(send func([]byte) error) (bool, error) {
+	command, pending := peekCommand()
+	if command == nil {
+		return false, nil
+	}
+	err := send(command)
+	if errors.Is(err, serial.ErrNotOpen) {
+		return true, err
+	}
+	consumeCommand()
+	if err == nil {
+		logger.Info("sent queued command, %d more pending for next cycles", pending)
+	}
+	return true, err
 }
 
 func MakeMQTTConn() (mqtt.Client, mqtt.Token) {
@@ -778,18 +856,17 @@ func HandleSetHeatpump(mclient mqtt.Client, msg mqtt.Message) {
 	queueCommand(command)
 }
 
-func send_command(command []byte, length int) bool {
+func send_command(command []byte, length int) error {
 	err := serialComms.SendCommand(command[:length])
 	if err != nil {
 		// while the port is down this would log every cycle
 		if !errors.Is(err, serial.ErrNotOpen) {
 			log.Printf("Failed to send command: %v\n", err)
 		}
-		return false
+		return err
 	}
 	logger.Debug(fmt.Sprintf("sent bytes: %d\n", length))
-
-	return true
+	return nil
 }
 
 // func pushCommandBuffer(command []byte , length int) {
@@ -808,7 +885,45 @@ func send_command(command []byte, length int) bool {
 // 	}
 //   }
 
+// serialAvailability observes link-loss generations, so a fast reopen
+// cannot hide a disconnect from MQTT clients.
+type serialAvailability struct {
+	initialized bool
+	online bool
+	lastLosses uint64
+}
+
+func publishSerialStatus(client mqtt.Client, status string) {
+	// Match the retained offline Last Will and use QoS 1 on both transitions.
+	token := client.Publish(fmt.Sprintf("%s/Status", config.Mqtt_topic_base), byte(1), true, status)
+	if token.WaitTimeout(time.Second) && token.Error() != nil {
+		logger.Error("Failed to publish serial availability: %v", token.Error())
+	}
+}
+
+func (a *serialAvailability) update(client mqtt.Client, losses uint64, goodReply bool) {
+	if !a.initialized {
+		a.initialized = true
+		a.lastLosses = losses
+		publishSerialStatus(client, "offline")
+	}
+	if losses != a.lastLosses {
+		a.lastLosses = losses
+		if a.online {
+			publishSerialStatus(client, "offline")
+			a.online = false
+		}
+	}
+	if goodReply {
+		// Republish retained online after each valid reply, so a broker reconnect
+		// also repairs the availability state without another serial transition.
+		publishSerialStatus(client, "online")
+		a.online = true
+	}
+}
+
 func readSerial(MC mqtt.Client, MT mqtt.Token) {
+	availability := serialAvailability{}
 	for {
 		// Read packet from serial port using the state machine
 		packet := serialComms.Read()
@@ -827,18 +942,13 @@ func readSerial(MC mqtt.Client, MT mqtt.Token) {
 				// Decode and publish the data
 				decode_heatpump_data(packet, MC)
 
-				// Publish online status
-				token := MC.Publish(
-					fmt.Sprintf("%s/Status", config.Mqtt_topic_base),
-					byte(0), false, "online")
-				if token.Wait() && token.Error() != nil {
-					logger.Error("Publish failed: %v", token.Error())
-				}
-			} else if len(packet) == serial.OptionalMessageLength {
+ 			} else if len(packet) == serial.OptionalMessageLength {
 				// Optional 20-byte packets - could be handled here in the future
 				log.Printf("Received optional packet (20 bytes) - not yet implemented")
 			}
 		}
+
+		availability.update(MC, serialComms.LinkLossCount(), packet != nil && len(packet) == serial.DataMessageLength)
 
 		// Brief pause to avoid tight loop
 		time.Sleep(10 * time.Millisecond)
