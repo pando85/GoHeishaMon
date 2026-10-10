@@ -17,6 +17,35 @@ import (
 
 const dataBufferSize = 1024
 
+type SerialPort interface {
+	Read(p []byte) (n int, err error)
+	Write(p []byte) (n int, err error)
+	Close() error
+	Flush() error
+}
+
+type tarmPort struct {
+	*tarm.Port
+}
+
+func (t *tarmPort) Read(p []byte) (n int, err error) {
+	return t.Port.Read(p)
+}
+
+func (t *tarmPort) Write(p []byte) (n int, err error) {
+	return t.Port.Write(p)
+}
+
+func (t *tarmPort) Close() error {
+	return t.Port.Close()
+}
+
+func (t *tarmPort) Flush() error {
+	return t.Port.Flush()
+}
+
+var _ SerialPort = (*tarmPort)(nil)
+
 // OptionalMessageLength is a length of an Optional PCB datagram with checksum
 const OptionalMessageLength = 20
 
@@ -28,13 +57,12 @@ const loggingRatio = 150
 // Comms represents a serial port used to communicate with the heat pump.
 // Handles low level communications, i.e. packet assembly, checksum generation/verification etc.
 type Comms struct {
-	goodreads  int64
-	totalreads int64
-	buffer     bytes.Buffer
-	// portMu guards serialPort: Read (serial reader goroutine) may reopen it
-	// while SendCommand (main loop goroutine) writes to it.
+	goodreads    int64
+	totalreads   int64
+	buffer       bytes.Buffer
+	// portMu guards the port across reads, writes and reconnection.
 	portMu       sync.Mutex
-	serialPort   *tarm.Port
+	serialPort   SerialPort
 	serialConfig *tarm.Config
 }
 
@@ -60,13 +88,16 @@ func (s *Comms) Open(portName string, timeout time.Duration) error {
 func (s *Comms) openInternal() error {
 	var err error
 	logger.Info("Opening serial port")
-	s.serialPort, err = tarm.OpenPort(s.serialConfig)
+	port, err := tarm.OpenPort(s.serialConfig)
 	if err != nil {
 		return fmt.Errorf("failed to open serial port: %w", err)
 	}
+	s.serialPort = &tarmPort{Port: port}
 
 	logger.Debug("Flushing serial port buffer")
-	s.serialPort.Flush()
+	if err := s.serialPort.Flush(); err != nil {
+		logger.Error("Failed to flush serial port: %v", err)
+	}
 
 	return nil
 }
@@ -141,7 +172,9 @@ func (s *Comms) readToBuffer() {
 	n, err := s.serialPort.Read(data)
 	if err != nil && err != io.EOF {
 		logger.Error("Serial read error: %v", err)
-		s.closeInternal()
+		if err := s.closeInternal(); err != nil {
+			logger.Error("Failed to close serial port: %v", err)
+		}
 		// Attempt to reconnect
 		if reopenErr := s.openInternal(); reopenErr != nil {
 			logger.Error("Failed to reconnect: %v", reopenErr)
@@ -188,8 +221,9 @@ func (s *Comms) dispatchDatagram(length int) []byte {
 }
 
 func (s *Comms) checkHeader() (length int, ok bool) {
-	// opt header: 71 11 01 50; 20 bytes
-	// header:     71 c8 01 10; 203 bytes
+	if s.buffer.Len() < 4 {
+		return 0, false
+	}
 	data := s.buffer.Bytes()
 	length = int(data[1]) + 3
 	ok = false

@@ -90,7 +90,7 @@ func TestActDataConcurrentRefresh(t *testing.T) {
 
 	packet := make([]byte, 203)
 	for i := 0; i < 50; i++ {
-		decode_heatpump_data(packet, fakeClient{}, nil)
+		decode_heatpump_data(packet, fakeClient{})
 	}
 	close(stop)
 	wg.Wait()

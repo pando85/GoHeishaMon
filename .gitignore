@@ -4,3 +4,4 @@ ZTAW.txt
 OS/RootFS/usr/bin/goheishamon
 OS/RootFS/etc/dropbear/authorized_keys
 dist
+goheishamon
