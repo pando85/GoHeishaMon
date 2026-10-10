@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -780,7 +781,10 @@ func HandleSetHeatpump(mclient mqtt.Client, msg mqtt.Message) {
 func send_command(command []byte, length int) bool {
 	err := serialComms.SendCommand(command[:length])
 	if err != nil {
-		log.Printf("Failed to send command: %v\n", err)
+		// while the port is down this would log every cycle
+		if !errors.Is(err, serial.ErrNotOpen) {
+			log.Printf("Failed to send command: %v\n", err)
+		}
 		return false
 	}
 	logger.Debug(fmt.Sprintf("sent bytes: %d\n", length))

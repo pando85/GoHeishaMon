@@ -45,8 +45,8 @@ func newFakeComms(t *testing.T, fail bool) (*Comms, *fakeLink) {
 
 func TestNoPortDoesNotPanic(t *testing.T) {
 	s := &Comms{} // Open never called
-	if err := s.SendCommand([]byte{0x71}); err == nil {
-		t.Error("SendCommand without a port: expected an error")
+	if err := s.SendCommand([]byte{0x71}); !errors.Is(err, ErrNotOpen) {
+		t.Errorf("SendCommand without a port = %v, want ErrNotOpen", err)
 	}
 	if p := s.Read(); p != nil {
 		t.Errorf("Read without a port = %v, want nil", p)

@@ -6,6 +6,7 @@ package serial
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -53,6 +54,10 @@ const OptionalMessageLength = 20
 const DataMessageLength = 203
 
 const loggingRatio = 150
+
+// ErrNotOpen is returned by SendCommand while the port is down and waiting to
+// be reopened; the reopen attempts are logged, so callers needn't log it.
+var ErrNotOpen = errors.New("serial port is not open")
 
 const (
 	reopenMinDelay = time.Second
@@ -229,7 +234,7 @@ func (s *Comms) SendCommand(command []byte) error {
 	s.portMu.Lock()
 	defer s.portMu.Unlock()
 	if !s.ensureOpen() {
-		return fmt.Errorf("serial port is not open")
+		return ErrNotOpen
 	}
 	_, err := s.serialPort.Write(command) // first send command
 	if err != nil {
