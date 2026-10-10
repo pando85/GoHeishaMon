@@ -12,6 +12,7 @@ type MockPort struct {
 	writeData []byte
 	readErr   error
 	writeErr  error
+	writeLimits []int
 	closed    bool
 }
 
@@ -37,8 +38,25 @@ func (m *MockPort) Write(p []byte) (n int, err error) {
 	if m.writeErr != nil {
 		return 0, m.writeErr
 	}
-	m.writeData = append(m.writeData, p...)
-	return len(p), nil
+	n = len(p)
+	if len(m.writeLimits) > 0 {
+		n = m.writeLimits[0]
+		m.writeLimits = m.writeLimits[1:]
+		if n < 0 {
+			n = 0
+		}
+		if n > len(p) {
+			n = len(p)
+		}
+	}
+	m.writeData = append(m.writeData, p[:n]...)
+	return n, nil
+}
+
+// SetWriteLimits simulates a series of writes that return fewer bytes and no
+// error. Unspecified subsequent writes use the full buffer.
+func (m *MockPort) SetWriteLimits(limits ...int) {
+	m.writeLimits = append([]int(nil), limits...)
 }
 
 func (m *MockPort) Close() error {
