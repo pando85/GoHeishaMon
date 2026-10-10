@@ -81,6 +81,7 @@ type Comms struct {
 	nextReopen   time.Time
 	reopenDelay  time.Duration
 	lastRx       time.Time
+	linkLosses   uint64
 
 	// StallTimeout overrides defaultStallTimeout; set it before the first Read.
 	StallTimeout time.Duration
@@ -178,8 +179,18 @@ func (s *Comms) linkLost(reason error) {
 	if err := s.closeInternal(); err != nil {
 		logger.Error("Failed to close serial port: %v", err)
 	}
-	s.serialPort = nil
+	// The next connection must not reuse bytes from an incomplete old frame.
+	s.buffer.Reset()
+	s.linkLosses++
 	s.nextReopen = s.clock()
+}
+
+// LinkLossCount lets the MQTT reader observe disconnections even if another
+// goroutine has already reopened the port before it polls again.
+func (s *Comms) LinkLossCount() uint64 {
+	s.portMu.Lock()
+	defer s.portMu.Unlock()
+	return s.linkLosses
 }
 
 // Close closes the serial port.
@@ -236,13 +247,19 @@ func (s *Comms) SendCommand(command []byte) error {
 	if !s.ensureOpen() {
 		return ErrNotOpen
 	}
-	_, err := s.serialPort.Write(command) // first send command
+	n, err := s.serialPort.Write(command) // first send command
+	if err == nil && n != len(command) {
+		err = io.ErrShortWrite
+	}
 	if err != nil {
 		err = fmt.Errorf("failed to write command: %w", err)
 		s.linkLost(err)
 		return err
 	}
-	_, err = s.serialPort.Write([]byte{chk}) // then calculated checksum byte afterwards
+	n, err = s.serialPort.Write([]byte{chk}) // then calculated checksum byte afterwards
+	if err == nil && n != 1 {
+		err = io.ErrShortWrite
+	}
 	if err != nil {
 		err = fmt.Errorf("failed to write checksum: %w", err)
 		s.linkLost(err)
@@ -341,6 +358,10 @@ func (s *Comms) checkHeader() (length int, ok bool) {
 // It holds state and should be called periodically.
 func (s *Comms) Read() []byte {
 	s.readToBuffer()
+	// Parsing is protected by the same lock used when linkLost clears the
+	// incomplete receive buffer. A failed write may close the port concurrently.
+	s.portMu.Lock()
+	defer s.portMu.Unlock()
 
 	if s.findHeaderStart() && s.buffer.Len() >= 4 { // have entire header at start of buffer
 		var (
