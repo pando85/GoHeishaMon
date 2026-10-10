@@ -366,7 +366,8 @@ func queueCommand(command []byte) {
 	commandsMu.Lock()
 	defer commandsMu.Unlock()
 	now := time.Now()
-	expireQueuedCommandsLocked(now)
+	// Expire only when the sender inspects the FIFO. Expiring here could
+	// remove the in-flight head between peekCommand and consumeCommand.
 	if len(commandQueue) >= maxQueuedCommands {
 		logger.Error("Command queue full (%d), dropping the newest command", maxQueuedCommands)
 		return
