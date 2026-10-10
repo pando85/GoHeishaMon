@@ -1,7 +1,9 @@
 package serial
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -186,5 +188,52 @@ func TestSilentPortBacksOff(t *testing.T) {
 	s.Read()
 	if f.opens != 4 {
 		t.Errorf("retried after 1.5 s although no data came since the last failure: opens = %d", f.opens)
+	}
+}
+
+func TestShortWritesCloseThePort(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		limits []int
+	}{
+		{"command", []int{2}},
+		{"checksum", []int{3, 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, f := newFakeComms(t, false)
+			port := f.last()
+			port.SetWriteLimits(tc.limits...)
+			if err := s.SendCommand([]byte{0x71, 0x6c, 0x01}); !errors.Is(err, io.ErrShortWrite) {
+				t.Fatalf("SendCommand error = %v, want io.ErrShortWrite", err)
+			}
+			if !port.IsClosed() || s.LinkLossCount() != 1 {
+				t.Fatalf("partial write did not close the connection")
+			}
+		})
+	}
+}
+
+func TestReconnectDiscardsPartialPreviousPacket(t *testing.T) {
+	s, f := newFakeComms(t, false)
+	old := f.last()
+	old.readData = []byte{0x71, 0xc8, 0x01, 0x10, 0x00, 0x00}
+	if packet := s.Read(); packet != nil {
+		t.Fatalf("partial packet returned: %v", packet)
+	}
+	if s.buffer.Len() == 0 {
+		t.Fatal("expected the partial packet to remain buffered")
+	}
+	old.SetReadError(io.ErrUnexpectedEOF)
+	s.Read()
+	if s.buffer.Len() != 0 || !old.IsClosed() {
+		t.Fatal("old partial packet survived disconnection")
+	}
+	s.Read() // open a fresh mock port
+	frame := make([]byte, DataMessageLength)
+	copy(frame, []byte{0x71, 0xc8, 0x01, 0x10})
+	frame[len(frame)-1] = calcChecksum(frame[:len(frame)-1])
+	f.last().readData = frame
+	if got := s.Read(); !bytes.Equal(got, frame) {
+		t.Fatalf("new frame not decoded correctly after reconnect: got %v", got)
 	}
 }
