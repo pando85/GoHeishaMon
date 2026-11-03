@@ -12,6 +12,9 @@ start_service() {
         procd_open_instance
 
         procd_set_param command sh -c "/usr/bin/goheishamon | logger -t goheishamon"
+        # Go's async preemption (SIGURG) corrupts the heap now and then on this kernel (3.14,
+        # MIPS 24Kc), see golang/go#58212. Keep it in sync with check_buttons.sh.
+        procd_set_param env GODEBUG=asyncpreemptoff=1
         procd_set_param respawn ${respawn_threshold:-600} ${respawn_timeout:-10} ${respawn_retry:-40}
         procd_set_param file /etc/config/goheishamon.toml
 
