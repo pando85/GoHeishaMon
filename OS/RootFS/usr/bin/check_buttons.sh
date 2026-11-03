@@ -1,6 +1,8 @@
 #!/bin/ash
 
 GOHEISHAMON_BIN=/usr/bin/goheishamon
+# For the restart below; same reason as in /etc/init.d/goheishamon (golang/go#58212).
+export GODEBUG=asyncpreemptoff=1
 
 logger -t check_buttons.sh "Init GPIOs"
 
