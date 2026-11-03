@@ -935,9 +935,8 @@ func readSerial(MC mqtt.Client, MT mqtt.Token) {
 				// Log statistics periodically
 				stats := serialComms.GetStatistics()
 				if stats.TotalReads%150 == 0 && stats.TotalReads > 0 {
-					log_msg := fmt.Sprintf("Total reads: %d, good reads: %d (%.2f%%)",
+					logger.Info("Total reads: %d, good reads: %d (%.2f%%)",
 						stats.TotalReads, stats.GoodReads, stats.ReadPercentage)
-					logger.Info(log_msg)
 				}
 
 				// Decode and publish the data
