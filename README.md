@@ -212,6 +212,19 @@ Current logs can be monitored in real-time with:
 logread -f | grep goheishamon
 ```
 
+### Random crashes
+
+On the CZ-TAW1's kernel (Linux 3.14, MIPS 24Kc) Go's asynchronous preemption corrupts the
+heap now and then, so GoHeishaMon panics after hours or days, each time somewhere else in the
+Go runtime (for example `slice bounds out of range` in `runtime.wbBufFlush1`), see
+[golang/go#58212](https://github.com/golang/go/issues/58212). The init script and
+`check_buttons.sh` start it with `GODEBUG=asyncpreemptoff=1`, which turns that off. If you start
+the binary another way, set it yourself:
+
+```bash
+GODEBUG=asyncpreemptoff=1 /usr/bin/goheishamon
+```
+
 ### Restart GoHeishaMon
 
 ```bash
